@@ -2,6 +2,7 @@ import tkinter as tk
 import tkinter.simpledialog as tksd
 import tkinter.messagebox as tkmb
 import urllib.request
+import urllib.parse
 import urllib.error
 import os
 import random
@@ -10,20 +11,51 @@ import json
 
 # Following code modified from Gemini with prompt 'tkinter simpledialog change width'
 class TokenEnter(tksd.Dialog):
-    def body(self, master):
-        self.entry = tk.Entry(master, width=50, show='*')  # Set the width here
-        self.entry.pack()
-        return self.entry
+    def body(self, parent):
+        font = ("Times", 15)
+
+        self.mainFrame = tk.Frame(parent)
+        self.mainFrame.pack(expand=True, fill='both')
+
+        tk.Label(self.mainFrame, text='Username:', font=font).grid(row=0, column=0)
+        self.userNameEnt = tk.Entry(self.mainFrame, width=20, font=font)
+        self.userNameEnt.grid(row=0, column=1, sticky='ew')
+
+        tk.Label(self.mainFrame, text='Password:', font=font).grid(row=1, column=0)
+        self.password = tk.Entry(self.mainFrame, width=20, show='*', font=font)  # Set the width here
+        self.password.grid(row=1, column=1)
+        self.error = False
+        return self
 
     def apply(self):
-        self.result = self.entry.get()
+        # Make call
+        baseUrl = 'https://api.vexcelgroup.com/v2/auth/login'
+        toEncode = {'username': self.userNameEnt.get(), 'password': self.password.get()}
+        # https://stackoverflow.com/questions/36484184/python-make-a-post-request-using-python-3-urllib
+        data = urllib.parse.urlencode(toEncode).encode()
+        req =  urllib.request.Request(baseUrl, data=data) # this will make the method "POST"
+        req.add_header('Content-Type', 'application/json')
+        req.add_header('accept', 'application/json')
+        try:
+            with urllib.request.urlopen(baseUrl, data=data) as resp:
+                if resp.status != 200:
+                    self.result = '204 Error: No content available'
+                    self.error = True
+                obj = json.loads(resp.read())
+                self.result = obj["token"]
+        except urllib.error.HTTPError as err:
+            self.result = 'HTTP Error: ' + err.reason
+            self.error = True
+        except urllib.error.URLError as err:
+            self.result = 'URL Error: Unknown cause'
+            self.error = True
 
 
 class VexcelGetter(tk.Frame):
-    def __init__(self, master, tkn, *args, **kwargs):
-        super().__init__(master, *args, **kwargs)
+    def __init__(self, parent, tkn, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
         self.__baseUrl = r'https://api.vexcelgroup.com/v2/oriented/extract?layer=urban'
-        entLabs = {"lat": ("Latitude", "29.643984"), "lng": ("Longitude", "-82.347763"), 
+        entLabs = {"wkt": ("WKT", "POINT(-82.347763 29.643984)"), 
                    "imgName": ("Image Name", "2024~us-fl-gainesville-2024~images~N_20241026_152951_49_3893BD830CA5ADC_rgb"), 
                    "imgType": ("Image Type", "oblique-north"), 
                    "minDay": ("Min Day", "2023-03-26"), "down": ("Down Sample", "4"), 
@@ -63,20 +95,22 @@ class VexcelGetter(tk.Frame):
     def getImageName(self):
         return self.ents['imgName'].get()
     
-    @staticmethod
-    def isFloat(pot:str):
-        # https://stackoverflow.com/questions/22789392/str-isdecimal-and-str-isdigit-difference-example
-        pt_pos = pot.find('.')
-        if pt_pos == -1:
-            return pot.isdecimal()
-        return (pot[:pt_pos].isdecimal() or pot[0] == '-' and pot[1:pt_pos].isdecimal()) and pot[pt_pos + 1:].isdecimal()
+    # @staticmethod
+    # def isFloat(pot:str):
+    #     # https://stackoverflow.com/questions/22789392/str-isdecimal-and-str-isdigit-difference-example
+    #     pt_pos = pot.find('.')
+    #     if pt_pos == -1:
+    #         return pot.isdecimal()
+    #     return (pot[:pt_pos].isdecimal() or pot[0] == '-' and pot[1:pt_pos].isdecimal()) and pot[pt_pos + 1:].isdecimal()
 
     @staticmethod
-    def isPosItg(pot:str):
+    def isNaturalItg(pot:str, includeZero=False):
         if len(pot) == 0:
             return True
         try:
             intg = int(pot)
+            if includeZero:
+                return intg >= 0
             return intg > 0
         except ValueError:
             return False
@@ -108,35 +142,38 @@ class VexcelGetter(tk.Frame):
         elif month == 2 and day > 28:
             return False
         return True
+    
+    def getWKT(self):
+        wkt = self.ents['wkt'].get().strip()
+        if not len(wkt) > 0:
+            self.reportError("WKT may not be empty for this call type.")
+            return ""
+        return wkt
 
     def getSharedValues(self):
-        lng = self.ents['lng'].get().strip()
-        lat = self.ents['lat'].get().strip()
-        if not self.isFloat(lng) or not self.isFloat(lat) or len(lng) == 0 or len(lat) == 0:
-            self.reportError("Invalid longitude and/or latitude.")
-            return ("-1",)
         minDay = self.ents['minDay'].get().strip()
         if not self.isDay(minDay):
             self.reportError("Problem with date.")
             return ("-1",)
         bboxWidth = self.ents["bbw"].get().strip()
         bboxHeight = self.ents["bbh"].get().strip()
-        if not self.isPosItg(bboxWidth) or not self.isPosItg(bboxHeight):
+        if not self.isNaturalItg(bboxWidth) or not self.isNaturalItg(bboxHeight):
             self.reportError("Problem with bounding box width and/or height.")
             return ("-1",)
         downsample = self.ents["down"].get().strip()
-        if not self.isPosItg(downsample):
+        if not self.isNaturalItg(downsample, includeZero=True):
             self.reportError("Problem with down sample integer.")
             return ("-1",)
         crop_type = self.ents["crop"].get().strip()
         img_format = self.ents["ftype"].get().strip()
         
-        return (lng, lat, minDay, downsample, bboxWidth, bboxHeight, crop_type, img_format)
+        return (minDay, downsample, bboxWidth, bboxHeight, crop_type, img_format)
     
-    def makeGetImageJSONUrl(self, lng, lat, minDay):
+    def makeGetImageJSONUrl(self, wkt, minDay):
         url = r'https://api.vexcelgroup.com/v2/oriented/query?'
-        url += rf'&wkt=POINT%20%28{lng}%20{lat}%29'
-        url += r'&spatial-operation=intersect'
+        url += rf'&' + urllib.parse.urlencode([('wkt', wkt)])
+        # url += r'&spatial-operation=intersect'
+        url += r'&spatial-operation=covers-wkt'
         if len(minDay) > 0:
             url += rf'&min-capture-date={minDay}T00%3A00%3A00&metadata-format=JSON'
         url += r'&bands=RGB&include=image-name'
@@ -144,12 +181,15 @@ class VexcelGetter(tk.Frame):
         url += rf'&token={self.__token}'
         return url
 
-    def makeGetImgUrl(self, img_name, img_type, lng, lat, minDay:str, downsample, bboxWidth, bboxHeight, crop_type, img_format):
+    def makeGetImgUrl(self, img_name, img_type, wkt, minDay:str, downsample, bboxWidth, bboxHeight, crop_type, img_format):
         # TODO: Check if min day is in YYYY-MM-DD format
         
         useUrl = r'https://api.vexcelgroup.com/v2/oriented/extract?layer=urban'                                  # base url
-        if len(lng) > 0 and len(lat) > 0:
-            useUrl += rf'&wkt=POINT%20%28{lng}%20{lat}%29'                                                           # point
+        if len(wkt) > 0:
+            # url_wkt = urllib.parse.urlencode([('wkt', f'POINT ({lng} {lat})')], encoding='utf-8')
+            url_wkt = urllib.parse.urlencode([('wkt', wkt)], encoding='utf-8')
+            # useUrl += rf'&wkt=POINT%20%28{lng}%20{lat}%29'                                                           # point
+            useUrl += '&' + url_wkt
 
         if len(img_name) > 0:
             useUrl += rf'&image-name={img_name}'
@@ -204,11 +244,15 @@ class VexcelGetter(tk.Frame):
             self.reportError('Image name field must not be empty.')
             return
         
+        wkt = self.getWKT()
+        if wkt == "":
+            return
+        
         others = self.getSharedValues()
         if others[0] == '-1':
             return
 
-        url = self.makeGetImgUrl(img_name, '', *others)
+        url = self.makeGetImgUrl(img_name, '', wkt, *others)
         if self.makeImgRequest(url, img_name + '.' + others[-1]):
             tkmb.showinfo("Success", f"Successfully wrote to '{img_name}.{others[-1]}'")
 
@@ -218,27 +262,33 @@ class VexcelGetter(tk.Frame):
             self.reportError('Image type field must not be empty.')
             return
         
+        wkt = self.ents['wkt'].get().strip()
+        if len(wkt) < 1:
+            self.reportError('WKT field must not be empty.')
+            return
+        
         others = self.getSharedValues()
         if others[0] == '-1':
             return
 
-        url = self.makeGetImgUrl('', img_type, *others)
+        url = self.makeGetImgUrl('', img_type, wkt, *others)
         if self.makeImgRequest(url, img_type + '.' + others[-1]):
             tkmb.showinfo("Success", f"Successfully wrote to '{img_type}.{others[-1]}'")
 
     
 
-    def handleGetAllImgsByLoc(self):        
+    def handleGetAllImgsByLoc(self):
+        wkt = self.getWKT()
+        if wkt == '':
+            return
+
         others = self.getSharedValues()
         if others[0] == '-1':
             return
-        
-        lng = others[0]
-        lat = others[1]
-        minDay = others[2]
+        minDay = others[0]
         ftype = others[-1]
 
-        url = self.makeGetImageJSONUrl(lng, lat, minDay)
+        url = self.makeGetImageJSONUrl(wkt, minDay)
         jsonObj = self.makeJSONRequest(url)
         if not jsonObj:
             return
@@ -248,9 +298,9 @@ class VexcelGetter(tk.Frame):
         # Make a folder
         folderName = ''
         while True:
-            folderName = f'./ImagesLat{lat}Lng{lng}R{random.randint(1,100000)}'
+            simp = wkt.replace(' ', '').replace(',', '~')
+            folderName = f'./ImagesWKT{simp[:50]}R{random.randint(1,100000)}'
             try:
-
                 os.mkdir(folderName)
             except FileExistsError:
                 continue
@@ -259,7 +309,7 @@ class VexcelGetter(tk.Frame):
         numImgs = len(actImgs)
         for idx, img in enumerate(actImgs):
             name = img['properties']['image-name']
-            url = self.makeGetImgUrl(name, '', *others)
+            url = self.makeGetImgUrl(name, '',wkt, *others)
             if not self.makeImgRequest(url, folderName + '/' + name + '.' + ftype):
                 self.batchLab.config(text=f'Quit at {idx + 1} of {numImgs}')
                 return
@@ -268,12 +318,25 @@ class VexcelGetter(tk.Frame):
         self.batchLab.config(text=f'Finished process')
         self.batchLab.update()
         tkmb.showinfo("Success", f"Successfully wrote {numImgs} images to {folderName}")
-            
-if __name__ == '__main__':   
+
+def main_func():
     root = tk.Tk()
     root.withdraw()
 
-    dg = TokenEnter(root, title="My Dialog")
+    ctr = 0
+    while True:
+        dg = TokenEnter(root, title="My Dialog")
+        if dg.error:
+            ctr += 1
+            if ctr < 5:
+                tkmb.showerror('Error', dg.result)
+            else:
+                tkmb.showerror('Stop', f'Attempted {ctr} times. Halting program.')
+                return
+        else:
+            break
+    if dg.result is None:
+        return
 
     root.wm_deiconify()
     tk.Label(root, text="Quick Caller", font=("times", 36)).pack(side='top', anchor='center')
@@ -282,3 +345,6 @@ if __name__ == '__main__':
     vg.pack()
     
     tk.mainloop()
+
+if __name__ == '__main__':
+    main_func()
