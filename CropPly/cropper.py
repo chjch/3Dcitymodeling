@@ -1,6 +1,9 @@
 import io
 import struct
 
+# codeape and Rufflewind https://stackoverflow.com/questions/1163459/reading-integers-from-binary-file-in-python
+# Diff between read and read1 https://stackoverflow.com/questions/57726771/what-the-difference-between-read-and-read1-in-python
+
 use_origin = (368500, 3280000, 40)
 
 class RGBVertex:
