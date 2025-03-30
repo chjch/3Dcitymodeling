@@ -1,6 +1,6 @@
 import numpy as np
 import cv2
-from PIL import Image
+from PIL import Image, ImageDraw
 
 import sys
 sys.path.append('../GetCameraCoordinates')
@@ -16,6 +16,7 @@ from exifExtractor import get_xml_data_from_file
 #  * https://docs.opencv.org/4.x/da/d54/group__imgproc__transform.html#gaf73673a7e8e18ec6963e3774e6a94b87
 #  * https://docs.opencv.org/4.x/d2/de8/group__core__array.html#gad327659ac03e5fd6894b90025e6900a7
 # Aya, jjv-liu at https://stackoverflow.com/questions/16981921/relative-imports-in-python-3 for importing
+# Making white box: https://www.youtube.com/watch?v=5QR-dG68eNE
 
 
 # Pixel bounding box
@@ -51,7 +52,6 @@ def wkt_to_pts(strung_wkt: str, strip_last=True, adjust_lng=83, adjust_lat=-29):
     # Go through and do conversions
     for idx, strung in enumerate(strung_pts[:out_shape[0]]):
         split = strung.strip().split(' ')
-        print(strung, split)
         out_pts[idx][0] = float(split[0]) + adjust_lng
         out_pts[idx][1] = float(split[1]) + adjust_lat 
     
@@ -69,7 +69,22 @@ def get_pixel_bbox(bbox_data : str | tuple[int]):
         [bbox_data[2], bbox_data[3]], 
         [bbox_data[0], bbox_data[3]]
     ], np.float32)
-    
+
+
+def get_bboxes(wkt_array: np.ndarray, image_name: str):
+    # Gets, in order, picture geometry bbox array, picture pixel bbox array, and transformed wkt bbox condensed
+    # condensed means (x0, y0, x1, y1)
+
+    # Get the geometry and pixel bounding boxes (assuming they line up exactly)
+    all_data = get_xml_data_from_file(image_name)
+    geo_bnd_box = wkt_to_pts(all_data['geometry'])
+    pixel_bnd_box = get_pixel_bbox(all_data['pixel-bbox'])
+
+    # Make the perspective matrix and get the transformed bbox
+    perspectiveMatrix = make_perspective_matrix(geo_bnd_box, pixel_bnd_box)
+    transformed_wkt_bnd_box = points_to_bbox(get_transformed_pts(perspectiveMatrix, wkt_array))
+
+    return geo_bnd_box, pixel_bnd_box, transformed_wkt_bnd_box 
 
 def crop_image(wkt_array: np.ndarray, image_name: str):
     '''
@@ -78,20 +93,25 @@ def crop_image(wkt_array: np.ndarray, image_name: str):
     * wkt_array: wkt string as an adjusted numpy array. Omit the loop point (though shouldn't cause issues)
     * image_name: Name of image
     '''
-    
-    # Get the geometry and pixel bounding boxes (assuming they line up exactly)
-    all_data = get_xml_data_from_file(image_name)
-    geo_bnd_box = wkt_to_pts(all_data['geometry'])
-    pixel_bnd_box = get_pixel_bbox(all_data['pixel-bbox'])
-
-    # Make the perspective matrix and get the transformed bbox
-    perspectiveMatrix = make_perspective_matrix(geo_bnd_box, pixel_bnd_box)
-    new_bbox = points_to_bbox(get_transformed_pts(perspectiveMatrix, wkt_array))
+    # Get the transformed wkt bounding box
+    _, _, new_bbox = get_bboxes(wkt_array, image_name)
 
     # Crop the image
-    img = Image.open(image_name)
-    cropped_img = img.crop(new_bbox)
-    cropped_img.save(image_name[:image_name.rfind('.')] + "_cropped.jpeg")
+    with Image.open(image_name) as img:
+        cropped_img = img.crop(new_bbox)
+        cropped_img.save(image_name[:image_name.rfind('.')] + "_cropped.jpeg")
+
+def make_mask(wkt_array: np.ndarray, image_name: str):
+    _, image_pixel_bbox, trans_wkt_pixel_bbox = get_bboxes(wkt_array, image_name)
+    # Create a new black image
+    full_width, full_height = int(image_pixel_bbox[2][0]), int(image_pixel_bbox[2][1])
+    img = Image.new('1', (full_width, full_height))
+
+    # Add white square (see YouTube source)
+    draw = ImageDraw.Draw(img)
+    draw.rectangle(trans_wkt_pixel_bbox, 'white')
+    img.save(img_name[:img_name.rfind('.')] + '_mask.jpeg')
+    
 
 if __name__ == '__main__':
     img_name = "MalachowskyEast1.jpeg"
@@ -99,4 +119,5 @@ if __name__ == '__main__':
     # Set up the cropping wkt
     mala_wkt = 'POLYGON ((-82.34839486935482 29.644256291665307, -82.348401674093097 29.643813201012254, -82.347120059355348 29.643797220022378, -82.347113254617071 29.644240310745761, -82.34839486935482 29.644256291665307))'
     mala_box_pnts = wkt_to_pts(mala_wkt)
-    crop_image(mala_box_pnts, img_name)
+    # crop_image(mala_box_pnts, img_name)
+    make_mask(mala_box_pnts, img_name)
