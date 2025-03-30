@@ -2,3 +2,4 @@
 *.png
 Images*/
 *.ply
+*/__pycache__/
