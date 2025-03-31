@@ -7,6 +7,9 @@ import shutil
 from translator2 import crop_image, make_mask, wkt_to_pts
 from exifExtractor import cam_pos_to_file, get_xml_data_from_file, use_origin
 
+# Relative imports: Aya and jjv-liu https://stackoverflow.com/questions/16981921/relative-imports-in-python-3
+# shutil: Swati and ruohola https://stackoverflow.com/questions/123198/how-do-i-copy-a-file
+
 def rename_in_cwd():
     change_map = dict()
     for record in os.scandir():
