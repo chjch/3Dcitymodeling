@@ -18,7 +18,6 @@ from exifExtractor import get_xml_data_from_file
 # Aya, jjv-liu at https://stackoverflow.com/questions/16981921/relative-imports-in-python-3 for importing
 # Making white box: https://www.youtube.com/watch?v=5QR-dG68eNE
 
-
 # Pixel bounding box
 
 def get_transformed_pts(perspective_mat: np.ndarray, two_d_pt_mat: np.ndarray):
@@ -86,7 +85,7 @@ def get_bboxes(wkt_array: np.ndarray, image_name: str):
 
     return geo_bnd_box, pixel_bnd_box, transformed_wkt_bnd_box 
 
-def crop_image(wkt_array: np.ndarray, image_name: str):
+def crop_image(wkt_array: np.ndarray, image_name: str, src_dir='', tgt_dir=''):
     '''
     Crop the image.
     Parameters:
@@ -94,15 +93,16 @@ def crop_image(wkt_array: np.ndarray, image_name: str):
     * image_name: Name of image
     '''
     # Get the transformed wkt bounding box
-    _, _, new_bbox = get_bboxes(wkt_array, image_name)
+    _, _, new_bbox = get_bboxes(wkt_array, src_dir + image_name)
 
     # Crop the image
-    with Image.open(image_name) as img:
+    with Image.open(src_dir + image_name) as img:
         cropped_img = img.crop(new_bbox)
-        cropped_img.save(image_name[:image_name.rfind('.')] + "_cropped.jpeg")
+        cropped_img.save(tgt_dir + image_name[:image_name.rfind('.')] + "_cropped.jpeg")
 
-def make_mask(wkt_array: np.ndarray, image_name: str):
-    _, image_pixel_bbox, trans_wkt_pixel_bbox = get_bboxes(wkt_array, image_name)
+def make_mask(wkt_array: np.ndarray, image_name: str, src_dir='', tgt_dir=''):
+    _, image_pixel_bbox, trans_wkt_pixel_bbox = get_bboxes(wkt_array, src_dir + image_name)
+    
     # Create a new black image
     full_width, full_height = int(image_pixel_bbox[2][0]), int(image_pixel_bbox[2][1])
     img = Image.new('1', (full_width, full_height))
@@ -110,8 +110,8 @@ def make_mask(wkt_array: np.ndarray, image_name: str):
     # Add white square (see YouTube source)
     draw = ImageDraw.Draw(img)
     draw.rectangle(trans_wkt_pixel_bbox, 'white')
-    img.save(img_name[:img_name.rfind('.')] + '_mask.jpeg')
-    
+    img.save(tgt_dir + image_name[:image_name.rfind('.')] + '_mask.jpeg')
+
 
 if __name__ == '__main__':
     img_name = "MalachowskyEast1.jpeg"

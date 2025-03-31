@@ -11,6 +11,8 @@
 import os
 import json
 
+use_origin = (368500, 3280000, 40)
+
 def picture_info_to_file(out_file_name: str, xmp_data: list[dict[str:str|float]]):
     out_str = json.dumps(xmp_data)
     out_str = out_str.replace(', "', ',\n"')
@@ -84,7 +86,6 @@ if __name__ == '__main__':
     # image_name = './ArchImages/2024~us-fl-gainesville-2024~images~E_20241026_160055_49_3893BD844B468B1_rgb.jpeg'
     # get_xml_data_from_file(image_name)
     full_file_data = []
-    use_origin = (368500, 3280000, 40)
     plain_folder_name = 'ArchImages'
     folder_name = f'./{plain_folder_name}/'
     for item in os.scandir(folder_name):
